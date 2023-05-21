@@ -7,7 +7,6 @@ import sys
 
 # настройки логирования
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-logging.basicConfig(stream=sys.stderr, level=logging.ERROR)
 logging.captureWarnings(True)
 
 # текущее время в UTC в миллисекундах
@@ -21,7 +20,7 @@ kafka_pass = 'de-kafka-admin-2022'
 kafka_security_options = {
     'kafka.security.protocol': 'SASL_SSL',
     'kafka.sasl.mechanism': 'SCRAM-SHA-512',
-    'kafka.sasl.jaas.config': f'org.apache.kafka.common.security.scram.ScramLoginModule required username="{kafka_user}" password="{kafka_pass}";',
+    'kafka.sasl.jaas.config': f'org.apache.kafka.common.security.scram.ScramLoginModule required username="{}" password="{}";'.format(kafka_user, kafka_pass)
 }
 
 postgresql_settings = {
@@ -33,18 +32,27 @@ postgresql_settings = {
 }
 
 # необходимые библиотеки для интеграции Spark с Kafka и PostgreSQL
-spark_jars_packages = ",".join(
-        [
+spark_jars_packages_arr = [
             "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0",
             "org.postgresql:postgresql:42.4.0",
         ]
-    )
+
+spark_jars_packages = ",".join(spark_jars_packages_arr) 
+
 
 TOPIC_NAME_IN = 'student.topic.cohort8.dmitriy_malyutin_in'
 TOPIC_NAME_OUT = 'student.topic.cohort8.dmitriy_malyutin_out'
 
 logging.info('=======================================================')
 logging.info('current_timestamp_utc: {}'.format(current_timestamp_utc))
+
+# создание spark-сессии
+def create_spark_session():
+    return SparkSession.builder \
+        .config("spark.jars.packages", spark_jars_packages) \
+        .config("spark.sql.session.timeZone", "UTC") \
+        .appName('practicum_project_8_Malyutin') \
+        .getOrCreate()
 
 # метод для записи данных в 2 target: в PostgreSQL для фидбэков и в Kafka для триггеров
 def foreach_batch_function(df, epoch_id):
@@ -159,11 +167,7 @@ def join(read_stream_df, subscribers_restaurant_df):
 
 if __name__ == '__main__':
 
-    spark = SparkSession.builder \
-        .config("spark.jars.packages", spark_jars_packages) \
-        .config("spark.sql.session.timeZone", "UTC") \
-        .appName('practicum_project_8_Malyutin') \
-        .getOrCreate()
+    spark = create_spark_session() 
     logging.info('Session created')
 
     logging.info('Get restaurant strem')
@@ -178,5 +182,6 @@ if __name__ == '__main__':
     logging.info('Start streaming')
     result.writeStream \
         .foreachBatch(foreach_batch_function) \
+        .trigger(processingTime='5 seconds') \
         .start() \
         .awaitTermination()
